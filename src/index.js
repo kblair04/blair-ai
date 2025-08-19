@@ -1,6 +1,7 @@
 const express = require('express');
 const { Client } = require('@notionhq/client');
 const cors = require('cors');
+const { v4: uuidv4 } = require('uuid');
 require('dotenv').config();
 
 const app = express();
@@ -30,18 +31,22 @@ const databases = {
   agent_memory: "625553863c934debac52fe62cab34dd0"
 };
 
+// Store processed idempotency keys (in production, use Redis)
+const processedKeys = new Set();
+
 // Health check endpoint
 app.get('/', (req, res) => {
   res.json({ 
     status: 'Blair AI v2.0 Router Active',
     version: '2.0.0',
+    endpoint: '/api/agent',
     databases: Object.keys(databases).length,
     notion_connected: true,
     timestamp: new Date().toISOString()
   });
 });
 
-// Test Notion connection
+// Test Notion connection (keep for debugging)
 app.get('/api/test', async (req, res) => {
   try {
     const response = await notion.databases.query({
@@ -61,56 +66,328 @@ app.get('/api/test', async (req, res) => {
   }
 });
 
-// Get all tasks
-app.get('/api/tasks', async (req, res) => {
+// MAIN UNIFIED AGENT ENDPOINT
+app.post('/api/agent', async (req, res) => {
   try {
-    const response = await notion.databases.query({
-      database_id: databases.tasks_master,
-      sorts: [{ property: 'priority', direction: 'descending' }]
-    });
-    res.json({ 
+    const { agent, action, idempotency_key, payload, meta } = req.body;
+    
+    // Validate required fields
+    if (!agent || !action || !idempotency_key || !payload) {
+      return res.status(400).json({
+        status: 'error',
+        message: 'Missing required fields: agent, action, idempotency_key, payload'
+      });
+    }
+    
+    // Check idempotency
+    if (processedKeys.has(idempotency_key)) {
+      return res.json({ 
+        status: 'success', 
+        message: 'Already processed',
+        cached: true 
+      });
+    }
+    
+    // Log activity (async, don't wait)
+    logActivity(agent, action, payload, meta);
+    
+    // Route to action handler
+    let result;
+    switch(action) {
+      case 'task.create':
+        result = await createTask(payload);
+        break;
+      case 'task.update':
+        result = await updateTask(payload);
+        break;
+      case 'task.delete':
+        result = await deleteTask(payload);
+        break;
+      case 'task.find':
+        result = await findTasks(payload);
+        break;
+      case 'project.create':
+        result = await createProject(payload);
+        break;
+      case 'project.find':
+        result = await findProjects(payload);
+        break;
+      case 'agent.coordinate':
+        result = await coordinateAgent(payload);
+        break;
+      default:
+        throw new Error(`Unknown action: ${action}`);
+    }
+    
+    // Mark as processed
+    processedKeys.add(idempotency_key);
+    
+    // Clean up old keys periodically (simple memory management)
+    if (processedKeys.size > 1000) {
+      processedKeys.clear();
+    }
+    
+    // Return standardized response
+    res.json({
       status: 'success',
-      count: response.results.length,
-      tasks: response.results
+      data: result,
+      message: `Action ${action} completed successfully`,
+      metadata: {
+        agent,
+        timestamp: new Date().toISOString(),
+        idempotency_key
+      }
     });
+    
   } catch (error) {
-    res.status(500).json({ 
-      status: 'error', 
-      message: error.message 
+    console.error('Error in agent endpoint:', error);
+    res.status(500).json({
+      status: 'error',
+      error: error.message,
+      action: req.body.action
     });
   }
 });
 
-// Create a task
-app.post('/api/tasks', async (req, res) => {
-  try {
-    const { title, priority, notes, status } = req.body;
-    
-    const response = await notion.pages.create({
-      parent: { database_id: databases.tasks_master },
-      properties: {
-        title: { title: [{ text: { content: title || "New Task" } }] },
-        priority: { select: { name: priority || "medium" } },
-        status: { select: { name: status || "not_started" } },
-        notes: { rich_text: [{ text: { content: notes || "" } }] }
-      }
-    });
-    
-    res.json({ 
-      status: 'success',
-      message: 'Task created',
-      task_id: response.id
-    });
-  } catch (error) {
-    res.status(500).json({ 
-      status: 'error', 
-      message: error.message 
+// ACTION HANDLERS
+
+async function createTask(payload) {
+  const response = await notion.pages.create({
+    parent: { database_id: databases.tasks_master },
+    properties: {
+      title: { title: [{ text: { content: payload.title } }] },
+      status: { select: { name: payload.status || 'not_started' } },
+      assignee: payload.assignee ? { 
+        rich_text: [{ text: { content: payload.assignee } }] 
+      } : undefined,
+      priority: { select: { name: payload.priority || 'medium' } },
+      due_date: payload.due_date ? { date: { start: payload.due_date } } : undefined,
+      notes: payload.notes ? { 
+        rich_text: [{ text: { content: payload.notes } }] 
+      } : undefined,
+      category: payload.category ? {
+        rich_text: [{ text: { content: payload.category } }]
+      } : undefined,
+      cost: payload.cost ? { number: payload.cost } : undefined,
+      effort_hours: payload.effort_hours ? { number: payload.effort_hours } : undefined
+    }
+  });
+  
+  return {
+    record_id: response.id,
+    record_url: response.url,
+    title: payload.title,
+    message: `Task "${payload.title}" created successfully`
+  };
+}
+
+async function updateTask(payload) {
+  const { record_id, ...updates } = payload;
+  
+  if (!record_id) {
+    throw new Error('record_id is required for task update');
+  }
+  
+  const properties = {};
+  if (updates.status) {
+    properties.status = { select: { name: updates.status } };
+  }
+  if (updates.assignee) {
+    properties.assignee = { rich_text: [{ text: { content: updates.assignee } }] };
+  }
+  if (updates.priority) {
+    properties.priority = { select: { name: updates.priority } };
+  }
+  if (updates.notes) {
+    properties.notes = { rich_text: [{ text: { content: updates.notes } }] };
+  }
+  if (updates.due_date) {
+    properties.due_date = { date: { start: updates.due_date } };
+  }
+  
+  const response = await notion.pages.update({
+    page_id: record_id,
+    properties
+  });
+  
+  return {
+    record_id: response.id,
+    updated: true,
+    message: 'Task updated successfully'
+  };
+}
+
+async function deleteTask(payload) {
+  if (!payload.record_id) {
+    throw new Error('record_id is required for task deletion');
+  }
+  
+  const response = await notion.pages.update({
+    page_id: payload.record_id,
+    archived: true
+  });
+  
+  return {
+    record_id: response.id,
+    archived: true,
+    message: 'Task archived successfully'
+  };
+}
+
+async function findTasks(payload) {
+  const filters = [];
+  
+  // Build filter based on payload
+  if (payload.status) {
+    filters.push({
+      property: 'status',
+      select: { equals: payload.status }
     });
   }
+  
+  if (payload.assignee) {
+    filters.push({
+      property: 'assignee',
+      rich_text: { contains: payload.assignee }
+    });
+  }
+  
+  if (payload.priority) {
+    filters.push({
+      property: 'priority',
+      select: { equals: payload.priority }
+    });
+  }
+  
+  const filter = filters.length > 0 ? 
+    (filters.length === 1 ? filters[0] : { and: filters }) : 
+    undefined;
+  
+  const response = await notion.databases.query({
+    database_id: databases.tasks_master,
+    filter: filter,
+    sorts: [
+      { property: 'priority', direction: 'descending' },
+      { property: 'due_date', direction: 'ascending' }
+    ],
+    page_size: payload.limit || 100
+  });
+  
+  // Format tasks for readability
+  const tasks = response.results.map(page => ({
+    id: page.id,
+    title: page.properties.title?.title[0]?.text?.content || 'Untitled',
+    status: page.properties.status?.select?.name || 'not_started',
+    assignee: page.properties.assignee?.rich_text[0]?.text?.content || 'Unassigned',
+    due_date: page.properties.due_date?.date?.start || null,
+    priority: page.properties.priority?.select?.name || 'medium',
+    notes: page.properties.notes?.rich_text[0]?.text?.content || '',
+    url: page.url
+  }));
+  
+  return { 
+    tasks, 
+    count: tasks.length,
+    message: `Found ${tasks.length} tasks`
+  };
+}
+
+async function createProject(payload) {
+  const response = await notion.pages.create({
+    parent: { database_id: databases.projects_master },
+    properties: {
+      name: { title: [{ text: { content: payload.name } }] },
+      status: { select: { name: payload.status || 'not_started' } },
+      owner: payload.owner ? { 
+        rich_text: [{ text: { content: payload.owner } }] 
+      } : undefined,
+      budget: payload.budget ? { number: payload.budget } : undefined,
+      priority: payload.priority ? { 
+        select: { name: payload.priority } 
+      } : undefined,
+      due_date: payload.due_date ? { 
+        date: { start: payload.due_date } 
+      } : undefined
+    }
+  });
+  
+  return {
+    record_id: response.id,
+    record_url: response.url,
+    name: payload.name,
+    message: `Project "${payload.name}" created successfully`
+  };
+}
+
+async function findProjects(payload) {
+  const response = await notion.databases.query({
+    database_id: databases.projects_master,
+    sorts: [{ property: 'priority', direction: 'descending' }]
+  });
+  
+  const projects = response.results.map(page => ({
+    id: page.id,
+    name: page.properties.name?.title[0]?.text?.content || 'Untitled',
+    status: page.properties.status?.select?.name || 'not_started',
+    owner: page.properties.owner?.rich_text[0]?.text?.content || 'Unassigned',
+    budget: page.properties.budget?.number || 0,
+    priority: page.properties.priority?.select?.name || 'medium',
+    url: page.url
+  }));
+  
+  return { 
+    projects, 
+    count: projects.length,
+    message: `Found ${projects.length} projects`
+  };
+}
+
+async function coordinateAgent(payload) {
+  // Inter-agent communication logic
+  // This will be expanded as we add more agents
+  return {
+    target_agent: payload.target_agent,
+    instruction: payload.instruction,
+    status: 'coordination_logged',
+    message: `Coordination request sent to ${payload.target_agent}`
+  };
+}
+
+async function logActivity(agent, action, payload, meta) {
+  // Fire and forget activity logging
+  try {
+    await notion.pages.create({
+      parent: { database_id: databases.activity_log },
+      properties: {
+        timestamp: { date: { start: new Date().toISOString() } },
+        agent: { rich_text: [{ text: { content: agent } }] },
+        action: { rich_text: [{ text: { content: action } }] },
+        request_payload: { rich_text: [{ text: { content: JSON.stringify(payload) } }] },
+        status: { select: { name: 'success' } }
+      }
+    });
+  } catch (error) {
+    console.error('Activity log error:', error);
+    // Don't throw - logging failure shouldn't break the main operation
+  }
+}
+
+// Keep backward compatibility endpoints temporarily
+app.get('/api/tasks', async (req, res) => {
+  // Redirect to unified endpoint
+  const result = await findTasks({});
+  res.json(result);
+});
+
+app.post('/api/tasks', async (req, res) => {
+  // Redirect to unified endpoint
+  const result = await createTask(req.body);
+  res.json(result);
 });
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`Blair AI v2.0 Router running on port ${PORT}`);
   console.log(`Connected to ${Object.keys(databases).length} Notion databases`);
+  console.log(`Unified endpoint: POST /api/agent`);
 });
