@@ -279,12 +279,12 @@ async function findTasks(payload) {
   // Format tasks for readability
   const tasks = response.results.map(page => ({
     id: page.id,
-    title: page.properties.title?.title[0]?.text?.content || 'Untitled',
+    title: page.properties.title?.title?.[0]?.text?.content || 'Untitled',
     status: page.properties.status?.select?.name || 'not_started',
-    assignee: page.properties.assignee?.rich_text[0]?.text?.content || 'Unassigned',
+    assignee: page.properties.assignee?.rich_text?.[0]?.text?.content || 'Unassigned',
     due_date: page.properties.due_date?.date?.start || null,
     priority: page.properties.priority?.select?.name || 'medium',
-    notes: page.properties.notes?.rich_text[0]?.text?.content || '',
+    notes: page.properties.notes?.rich_text?.[0]?.text?.content || '',
     url: page.url
   }));
   
@@ -330,9 +330,9 @@ async function findProjects(payload) {
   
   const projects = response.results.map(page => ({
     id: page.id,
-    name: page.properties.name?.title[0]?.text?.content || 'Untitled',
+    name: page.properties.name?.title?.[0]?.text?.content || 'Untitled',
     status: page.properties.status?.select?.name || 'not_started',
-    owner: page.properties.owner?.rich_text[0]?.text?.content || 'Unassigned',
+    owner: page.properties.owner?.rich_text?.[0]?.text?.content || 'Unassigned',
     budget: page.properties.budget?.number || 0,
     priority: page.properties.priority?.select?.name || 'medium',
     url: page.url
