@@ -71,13 +71,16 @@ app.post('/api/agent', async (req, res) => {
   try {
     const { agent, action, idempotency_key, payload, meta } = req.body;
     
-    // Validate required fields
-    if (!agent || !action || !idempotency_key || !payload) {
+    // Validate required fields (payload is now optional)
+    if (!agent || !action || !idempotency_key) {
       return res.status(400).json({
         status: 'error',
-        message: 'Missing required fields: agent, action, idempotency_key, payload'
+        message: 'Missing required fields: agent, action, idempotency_key'
       });
     }
+    
+    // Set payload to empty object if not provided
+    const requestPayload = payload || {};
     
     // Check idempotency
     if (processedKeys.has(idempotency_key)) {
@@ -89,31 +92,31 @@ app.post('/api/agent', async (req, res) => {
     }
     
     // Log activity (async, don't wait)
-    logActivity(agent, action, payload, meta);
+    logActivity(agent, action, requestPayload, meta);
     
     // Route to action handler
     let result;
     switch(action) {
       case 'task.create':
-        result = await createTask(payload);
+        result = await createTask(requestPayload);
         break;
       case 'task.update':
-        result = await updateTask(payload);
+        result = await updateTask(requestPayload);
         break;
       case 'task.delete':
-        result = await deleteTask(payload);
+        result = await deleteTask(requestPayload);
         break;
       case 'task.find':
-        result = await findTasks(payload);
+        result = await findTasks(requestPayload);
         break;
       case 'project.create':
-        result = await createProject(payload);
+        result = await createProject(requestPayload);
         break;
       case 'project.find':
-        result = await findProjects(payload);
+        result = await findProjects(requestPayload);
         break;
       case 'agent.coordinate':
-        result = await coordinateAgent(payload);
+        result = await coordinateAgent(requestPayload);
         break;
       default:
         throw new Error(`Unknown action: ${action}`);
@@ -155,7 +158,7 @@ async function createTask(payload) {
   const response = await notion.pages.create({
     parent: { database_id: databases.tasks_master },
     properties: {
-      title: { title: [{ text: { content: payload.title } }] },
+      title: { title: [{ text: { content: payload.title || "New Task" } }] },
       status: { select: { name: payload.status || 'not_started' } },
       assignee: payload.assignee ? { 
         rich_text: [{ text: { content: payload.assignee } }] 
@@ -296,14 +299,14 @@ async function createProject(payload) {
   const response = await notion.pages.create({
     parent: { database_id: databases.projects_master },
     properties: {
-      name: { title: [{ text: { content: payload.name } }] },
+      name: { title: [{ text: { content: payload.name || "New Project" } }] },
       status: { select: { name: payload.status || 'not_started' } },
       owner: payload.owner ? { 
         rich_text: [{ text: { content: payload.owner } }] 
       } : undefined,
       budget: payload.budget ? { number: payload.budget } : undefined,
       priority: payload.priority ? { 
-        select: { name: payload.priority } 
+        select: { name: payload.priority || 'medium' } 
       } : undefined,
       due_date: payload.due_date ? { 
         date: { start: payload.due_date } 
@@ -374,15 +377,27 @@ async function logActivity(agent, action, payload, meta) {
 
 // Keep backward compatibility endpoints temporarily
 app.get('/api/tasks', async (req, res) => {
-  // Redirect to unified endpoint
-  const result = await findTasks({});
-  res.json(result);
+  try {
+    const result = await findTasks({});
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ 
+      status: 'error', 
+      message: error.message 
+    });
+  }
 });
 
 app.post('/api/tasks', async (req, res) => {
-  // Redirect to unified endpoint
-  const result = await createTask(req.body);
-  res.json(result);
+  try {
+    const result = await createTask(req.body);
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ 
+      status: 'error', 
+      message: error.message 
+    });
+  }
 });
 
 const PORT = process.env.PORT || 3000;
