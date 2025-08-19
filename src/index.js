@@ -9,7 +9,7 @@ app.use(express.json());
 
 // Initialize Notion client
 const notion = new Client({
-  auth: process.env.NOTION_API_KEY || "ntn_q6114035264a9G5f3vNW7dNDEWuaudZP6i4BbWaMBvxaYm"
+  auth: process.env.NOTION_API_KEY
 });
 
 // Database IDs from your Notion setup
