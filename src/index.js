@@ -69,9 +69,9 @@ app.get('/api/test', async (req, res) => {
 // MAIN UNIFIED AGENT ENDPOINT
 app.post('/api/agent', async (req, res) => {
   try {
-    const { agent, action, idempotency_key, payload, meta } = req.body;
+    const { agent, action, idempotency_key, payload, meta, ...directFields } = req.body;
     
-    // Validate required fields (payload is now optional)
+    // Validate required fields
     if (!agent || !action || !idempotency_key) {
       return res.status(400).json({
         status: 'error',
@@ -79,8 +79,9 @@ app.post('/api/agent', async (req, res) => {
       });
     }
     
-    // Set payload to empty object if not provided
-    const requestPayload = payload || {};
+    // CRITICAL FIX: Handle both payload wrapper AND direct fields
+    // If payload exists and has content, use it. Otherwise, use directFields
+    const requestPayload = (payload && Object.keys(payload).length > 0) ? payload : directFields;
     
     // Check idempotency
     if (processedKeys.has(idempotency_key)) {
@@ -142,6 +143,15 @@ app.post('/api/agent', async (req, res) => {
       }
     });
     
+  } catch (error) {
+    console.error('Error in agent endpoint:', error);
+    res.status(500).json({
+      status: 'error',
+      error: error.message,
+      action: req.body.action
+    });
+  }
+});
   } catch (error) {
     console.error('Error in agent endpoint:', error);
     res.status(500).json({
