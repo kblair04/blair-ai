@@ -81,7 +81,7 @@ app.post('/api/agent', async (req, res) => {
     
     // CRITICAL FIX: Handle both payload wrapper AND direct fields
     // If payload exists and has content, use it. Otherwise, use directFields
-    const requestPayload = data || payload || directFields;
+    const requestPayload = (meta && meta.task) || data || payload || directFields;
     
     // Check idempotency
     if (processedKeys.has(idempotency_key)) {
