@@ -151,16 +151,6 @@ app.post('/api/agent', async (req, res) => {
       action: req.body.action
     });
   }
-});
-  } catch (error) {
-    console.error('Error in agent endpoint:', error);
-    res.status(500).json({
-      status: 'error',
-      error: error.message,
-      action: req.body.action
-    });
-  }
-});
 
 // ACTION HANDLERS
 
