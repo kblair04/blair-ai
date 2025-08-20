@@ -69,7 +69,7 @@ app.get('/api/test', async (req, res) => {
 // MAIN UNIFIED AGENT ENDPOINT
 app.post('/api/agent', async (req, res) => {
   try {
-    const { agent, action, idempotency_key, payload, meta, ...directFields } = req.body;
+    const { agent, action, idempotency_key, data, payload, meta, ...directFields } = req.body;
     
     // Validate required fields
     if (!agent || !action || !idempotency_key) {
@@ -81,7 +81,7 @@ app.post('/api/agent', async (req, res) => {
     
     // CRITICAL FIX: Handle both payload wrapper AND direct fields
     // If payload exists and has content, use it. Otherwise, use directFields
-    const requestPayload = (payload && Object.keys(payload).length > 0) ? payload : directFields;
+    const requestPayload = data || payload || directFields;
     
     // Check idempotency
     if (processedKeys.has(idempotency_key)) {
