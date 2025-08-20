@@ -151,6 +151,7 @@ app.post('/api/agent', async (req, res) => {
       action: req.body.action
     });
   }
+});
 
 // ACTION HANDLERS
 
@@ -179,8 +180,8 @@ async function createTask(payload) {
   return {
     record_id: response.id,
     record_url: response.url,
-    title: payload.title,
-    message: `Task "${payload.title}" created successfully`
+    title: payload.title || "New Task",
+    message: `Task "${payload.title || 'New Task'}" created successfully`
   };
 }
 
@@ -317,8 +318,8 @@ async function createProject(payload) {
   return {
     record_id: response.id,
     record_url: response.url,
-    name: payload.name,
-    message: `Project "${payload.name}" created successfully`
+    name: payload.name || "New Project",
+    message: `Project "${payload.name || 'New Project'}" created successfully`
   };
 }
 
