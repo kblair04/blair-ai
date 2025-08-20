@@ -91,16 +91,19 @@ app.post('/api/agent', async (req, res) => {
     // Extract request payload based on action type
     let requestPayload = {};
     if (action === 'task.find') {
-      // For find, use filters from meta
       requestPayload = meta?.filters || {};
     } else if (action.startsWith('task.')) {
-      // For other task actions, require meta.task
       if (!meta?.task) {
         throw new Error(`Missing meta.task for action ${action}`);
       }
       requestPayload = meta.task;
+    } else if (action.startsWith('project.')) {
+    // Add this new condition for projects
+    if (!meta?.project) {
+      throw new Error(`Missing meta.project for action ${action}`);
+    }
+    requestPayload = meta.project;
     } else if (meta?.task) {
-      // For any other actions that might have task data
       requestPayload = meta.task;
     }
     
@@ -315,15 +318,12 @@ async function createProject(payload) {
   const response = await notion.pages.create({
     parent: { database_id: databases.projects_master },
     properties: {
-      name: { title: [{ text: { content: payload.name || "New Project" } }] },
+      name: { title: [{ text: { content: payload.title || payload.name || "New Project" } }] },
       status: { select: { name: payload.status || 'not_started' } },
-      owner: payload.owner ? { 
-        rich_text: [{ text: { content: payload.owner } }] 
-      } : undefined,
-      budget: payload.budget ? { number: payload.budget } : undefined,
       priority: payload.priority ? { 
         select: { name: payload.priority || 'medium' } 
       } : undefined,
+      budget: payload.budget ? { number: payload.budget } : undefined,
       due_date: payload.due_date ? { 
         date: { start: payload.due_date } 
       } : undefined
@@ -333,8 +333,8 @@ async function createProject(payload) {
   return {
     record_id: response.id,
     record_url: response.url,
-    name: payload.name || "New Project",
-    message: `Project "${payload.name || 'New Project'}" created successfully`
+    name: payload.title || payload.name || "New Project",
+    message: `Project "${payload.title || payload.name || 'New Project'}" created successfully`
   };
 }
 
