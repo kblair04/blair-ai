@@ -176,3 +176,132 @@ END OF CHECKPOINT DOCUMENTATION
 Version: 2.0.0
 Last Updated: January 20, 2025
 Status: FULLY OPERATIONAL ✅
+
+// New update from 8/19/25 11pm
+
+## 2. INFRASTRUCTURE.md (Update with new section)
+
+Add this section after the "API ENDPOINTS" section:
+
+```markdown
+## CRITICAL IMPLEMENTATION DETAILS
+
+### The ChatGPT Integration Challenge
+ChatGPT's OpenAPI implementation has extremely restrictive field validation that required a specific solution:
+
+#### What Didn't Work
+1. **Direct field mapping** - ChatGPT rejected all custom fields
+2. **Payload wrapper** - Rejected with "UnrecognizedKwargsError: payload"
+3. **Data wrapper** - Also rejected as unrecognized
+4. **Flattened fields** - All task fields rejected when sent at root level
+
+#### The Solution: Meta Pattern
+After extensive testing, we discovered ChatGPT only accepts these exact fields:
+- `agent` (string)
+- `action` (string)
+- `idempotency_key` (string)
+- `meta` (object)
+
+All operation data MUST go inside `meta` with typed sub-objects:
+
+```javascript
+// Task operations use meta.task
+{
+  "agent": "clark_ceo",
+  "action": "task.create",
+  "idempotency_key": "uuid",
+  "meta": {
+    "user": "Kevin",
+    "source": "chatgpt",
+    "task": {
+      "title": "Task title",
+      "priority": "high",
+      "status": "not_started"
+    }
+  }
+}
+
+// Project operations use meta.project
+{
+  "agent": "clark_ceo",
+  "action": "project.create",
+  "idempotency_key": "uuid",
+  "meta": {
+    "user": "Kevin",
+    "source": "chatgpt",
+    "project": {
+      "title": "Project name",
+      "status": "active"
+    }
+  }
+}
+
+// Search operations use meta.filters
+{
+  "agent": "clark_ceo",
+  "action": "task.find",
+  "idempotency_key": "uuid",
+  "meta": {
+    "user": "Kevin",
+    "source": "chatgpt",
+    "filters": {
+      "status": "not_started",
+      "priority": "high"
+    }
+  }
+}
+Notion Integration Gotchas
+Field Type Mismatches
+
+assignee: Must be Person type with Notion user ID, not string
+category: Field doesn't exist in tasks_master (removed)
+name vs title: Projects use name, tasks use title
+
+Current Field Mappings
+javascript// Tasks
+{
+  title: { title: [{ text: { content: "..." } }] },
+  status: { select: { name: "not_started" } },
+  priority: { select: { name: "high" } },
+  due_date: { date: { start: "2025-01-20" } },
+  notes: { rich_text: [{ text: { content: "..." } }] }
+}
+
+// Projects
+{
+  name: { title: [{ text: { content: "..." } }] },  // Note: 'name' not 'title'
+  status: { select: { name: "active" } },
+  priority: { select: { name: "medium" } },
+  budget: { number: 1000 }
+}
+Unified Endpoint Architecture
+The /api/agent endpoint handles ALL operations through a single entry point:
+javascript// Extraction logic for different action types
+let requestPayload = {};
+if (action === 'task.find') {
+  requestPayload = meta?.filters || {};
+} else if (action.startsWith('task.')) {
+  if (!meta?.task) throw new Error(`Missing meta.task`);
+  requestPayload = meta.task;
+} else if (action.startsWith('project.')) {
+  if (!meta?.project) throw new Error(`Missing meta.project`);
+  requestPayload = meta.project;
+}
+This pattern ensures:
+
+New agents can be added without API changes
+Consistent interface across all operations
+ChatGPT compatibility maintained
+Single point of authentication/validation
+
+Priority Preservation
+Throughout development, we maintained these critical priorities:
+
+Unified architecture - One endpoint for all agents
+Scalability - Easy to add new agents
+ChatGPT compatibility - Work within its restrictions
+Field flexibility - Handle multiple naming conventions
+Error clarity - Helpful error messages for debugging
+
+
+These documents capture the journey, the solution, and the critical knowledge needed to maintain and expand the system. The meta pattern is clearly documented as the core architectural decision that makes everything work.
