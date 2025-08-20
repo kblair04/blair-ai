@@ -1,96 +1,105 @@
-📋 NEXT STEPS - NEW CHAT INSTRUCTIONS
-Save this in your project for the next chat:
+# Blair AI v2.0 - Next Steps
 
-BLAIR AI v2.0 - NEXT STEPS FOR NEW CHAT
-Continue from Infrastructure Checkpoint
-🎯 IMMEDIATE NEXT STEPS
-When you open a new chat in this project, say:
+## Immediate Priorities
 
-"I've completed the Blair AI v2.0 infrastructure setup. Railway API is live at blair-ai-production.up.railway.app, all 14 Notion databases are created and connected. I'm ready to build the AI agents. Let's start with creating Clark (CEO) as a ChatGPT Custom GPT."
+### 1. Add User Assignment to Tasks
+- Implement Notion user ID lookup functionality
+- Create endpoint to fetch and cache user IDs from people_crm
+- Update task creation to properly assign users using Notion Person type
+- Map common names to Notion IDs (Kevin, Elizabeth, etc.)
 
+### 2. Deploy Additional Agents
+**Nora (Nutritionist)**
+- Use same `meta.task` pattern for recipe/meal operations
+- Connect to food_recipes, food_meal_plans databases
+- Implement `recipe.create`, `meal_plan.generate` actions
 
-📌 QUICK REFERENCE FOR NEXT CHAT
-What's Already Done:
+**Oz (Order Taker)**
+- Handle procurement through `order.create` actions
+- Link to grocery lists and vendor management
 
-✅ Railway API: https://blair-ai-production.up.railway.app
-✅ GitHub Repo: https://github.com/kblair04/blair-ai
-✅ 14 Notion databases created and integrated
-✅ API endpoints working (/api/tasks, /api/test)
-✅ 4 agents registered (Clark, Nora, Oz, Sage)
-✅ Test data populated
+**Sage (Scheduler)**
+- Calendar integration via `event.create`, `event.update`
+- Time blocking and conflict resolution
 
-Priority Tasks:
-1. Build Clark (CEO) ChatGPT Custom GPT
+### 3. Enhance Error Handling
+- Add detailed error messages for missing fields
+- Implement retry logic for transient failures
+- Better validation before Notion API calls
 
-Create Custom GPT in ChatGPT
-Add API actions for task management
-Test with family scenarios
+### 4. Testing & Monitoring
+- Create comprehensive test suite for all actions
+- Add performance monitoring (response times)
+- Implement activity dashboard in Notion
 
-2. Create Nora (Nutritionist)
+## Architecture Decisions to Maintain
 
-Design meal planning prompts
-Connect to food databases
-Test recipe generation
+### The Meta Pattern (CRITICAL)
+All ChatGPT/Claude agents MUST use this structure:
+```json{
+"agent": "agent_name",
+"action": "resource.operation",
+"idempotency_key": "uuid",
+"meta": {
+"user": "name",
+"source": "chatgpt/claude",
+"task": { /* for task operations / },
+"project": { / for project operations / },
+"filters": { / for search operations */ }
+}
+}
 
-3. Voice Command Setup
+### Unified Endpoint Philosophy
+- Keep single `/api/agent` endpoint for ALL operations
+- Route internally based on action type
+- This enables dynamic agent addition without API changes
 
-Apple Shortcuts integration
-"Hey Siri" commands
-Task creation via voice
+## Known Issues & Solutions
 
-4. Family Dashboard
+### Issue: ChatGPT Field Restrictions
+**Problem:** ChatGPT's OpenAPI implementation rejects unknown fields
+**Solution:** Everything goes inside `meta` object with typed sub-objects
 
-Web interface for viewing data
-Mobile-friendly design
-Real-time updates
+### Issue: Notion Field Types
+**Problem:** Notion has strict typing (Person vs Text, etc.)
+**Solution:** Map fields correctly in action handlers, validate before sending
 
+### Issue: Database Field Naming
+**Problem:** Inconsistent naming (title vs name, assignee types)
+**Solution:** Handle both variations in code, document expected fields
 
-💬 CONVERSATION STARTERS FOR NEW CHAT
-Choose based on what you want to build:
-For Building Clark:
+## Future Enhancements
 
-"Let's create Clark, the CEO Custom GPT. I need the complete instructions, personality, and API action configurations for ChatGPT."
+1. **Voice Integration**
+   - Apple Shortcuts for Siri commands
+   - Google Assistant support
+   - Natural language processing improvements
 
-For Voice Commands:
+2. **Multi-Agent Coordination**
+   - Agent-to-agent communication protocol
+   - Task handoff mechanisms
+   - Shared context management
 
-"Help me create Apple Shortcuts that connect to my Blair AI API for voice-controlled task creation."
+3. **Advanced Features**
+   - Bulk operations support
+   - Transaction rollback capability
+   - Webhook notifications for task updates
 
-For Dashboard:
+## Development Guidelines
 
-"I want to build a simple web dashboard that displays my tasks and projects from the Blair AI API."
+1. **Always test with Clark first** - CEO agent validates the pattern
+2. **Document field mappings** - Critical for Notion integration
+3. **Preserve unified architecture** - Don't create agent-specific endpoints
+4. **Use meta pattern** - All data flows through meta object
+5. **Handle backwards compatibility** - Support multiple field name variations
 
-For Expanding API:
+## Deployment Checklist
+- [ ] Test all CRUD operations
+- [ ] Verify idempotency handling
+- [ ] Check error messages are helpful
+- [ ] Confirm Railway logs are clean
+- [ ] Update agent OpenAPI schemas
+- [ ] Document any new Notion fields
 
-"Let's add more endpoints to my Railway API - I want to implement update, delete, and project management."
-
-For Testing:
-
-"Show me how to test my Blair AI system with real family scenarios and create automation workflows."
-
-
-🔧 TECHNICAL CONTEXT TO PROVIDE
-If the assistant needs context, mention:
-
-API is Node.js/Express on Railway
-Using Notion API SDK v2.2.13
-Port 8080, auto-deploy from GitHub
-All databases use underscore naming (tasks_master, etc.)
-Environment variable: NOTION_API_KEY
-
-
-📁 PROJECT FILES TO REFERENCE
-Mention you have these documented:
-
-INFRASTRUCTURE.md - Complete system overview
-package.json - Dependencies
-src/index.js - API router code
-railway.json - Deployment config
-
-
-🚀 RECOMMENDED FIRST ACTION
-Start with Clark (CEO) because:
-
-Central coordinator for all other agents
-Highest budget authority ($1000)
-Most versatile for testing
-Gateway to other agents
+Last Updated: January 2025
+Status: Clark v2.0 Complete, Ready for Agent Expansion
