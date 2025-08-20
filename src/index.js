@@ -182,16 +182,10 @@ async function createTask(payload) {
     properties: {
       title: { title: [{ text: { content: payload.title || "New Task" } }] },
       status: { select: { name: payload.status || 'not_started' } },
-      assignee: payload.assignee ? { 
-        rich_text: [{ text: { content: payload.assignee } }] 
-      } : undefined,
       priority: { select: { name: payload.priority || 'medium' } },
       due_date: payload.due_date ? { date: { start: payload.due_date } } : undefined,
       notes: payload.notes ? { 
         rich_text: [{ text: { content: payload.notes } }] 
-      } : undefined,
-      category: payload.category ? {
-        rich_text: [{ text: { content: payload.category } }]
       } : undefined,
       cost: payload.cost ? { number: payload.cost } : undefined,
       effort_hours: payload.effort_hours ? { number: payload.effort_hours } : undefined
