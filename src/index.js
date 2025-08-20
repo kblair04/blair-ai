@@ -69,7 +69,7 @@ app.get('/api/test', async (req, res) => {
 // MAIN UNIFIED AGENT ENDPOINT
 app.post('/api/agent', async (req, res) => {
   try {
-    const { agent, action, idempotency_key, data, payload, meta, ...directFields } = req.body;
+    const { agent, action, idempotency_key, meta } = req.body;
     
     // Validate required fields
     if (!agent || !action || !idempotency_key) {
@@ -78,10 +78,6 @@ app.post('/api/agent', async (req, res) => {
         message: 'Missing required fields: agent, action, idempotency_key'
       });
     }
-    
-    // CRITICAL FIX: Handle both payload wrapper AND direct fields
-    // If payload exists and has content, use it. Otherwise, use directFields
-    const requestPayload = (meta && meta.task) || data || payload || directFields;
     
     // Check idempotency
     if (processedKeys.has(idempotency_key)) {
@@ -92,7 +88,23 @@ app.post('/api/agent', async (req, res) => {
       });
     }
     
-    // Log activity (async, don't wait)
+    // Extract request payload based on action type
+    let requestPayload = {};
+    if (action === 'task.find') {
+      // For find, use filters from meta
+      requestPayload = meta?.filters || {};
+    } else if (action.startsWith('task.')) {
+      // For other task actions, require meta.task
+      if (!meta?.task) {
+        throw new Error(`Missing meta.task for action ${action}`);
+      }
+      requestPayload = meta.task;
+    } else if (meta?.task) {
+      // For any other actions that might have task data
+      requestPayload = meta.task;
+    }
+    
+    // Log activity
     logActivity(agent, action, requestPayload, meta);
     
     // Route to action handler
@@ -102,9 +114,18 @@ app.post('/api/agent', async (req, res) => {
         result = await createTask(requestPayload);
         break;
       case 'task.update':
+        if (!requestPayload.record_id && !requestPayload.id) {
+          throw new Error('record_id or id required for task update');
+        }
+        // Handle both record_id and id fields
+        requestPayload.record_id = requestPayload.record_id || requestPayload.id;
         result = await updateTask(requestPayload);
         break;
       case 'task.delete':
+        if (!requestPayload.record_id && !requestPayload.id) {
+          throw new Error('record_id or id required for task deletion');
+        }
+        requestPayload.record_id = requestPayload.record_id || requestPayload.id;
         result = await deleteTask(requestPayload);
         break;
       case 'task.find':
@@ -126,7 +147,7 @@ app.post('/api/agent', async (req, res) => {
     // Mark as processed
     processedKeys.add(idempotency_key);
     
-    // Clean up old keys periodically (simple memory management)
+    // Clean up old keys periodically
     if (processedKeys.size > 1000) {
       processedKeys.clear();
     }
